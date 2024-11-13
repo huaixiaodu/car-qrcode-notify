@@ -9,7 +9,7 @@
 
 # 正文开始
 
-1、复制以下代码部署到 cloudflare workers 即可\
+1、复制 [worker.js](https://github.com/oozzbb/car-qrcode-notify/blob/main/worker.js) 文件内的代码部署到 cloudflare workers 即可\
 2、在新建的 workers 的设置中绑定 KV 数据库，具体如下图（变量名称必须为 DATA）
 ![image](https://github.com/user-attachments/assets/b1641ff6-92d4-44bb-8edf-d598f2f188b3)
 
