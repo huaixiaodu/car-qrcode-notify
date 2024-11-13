@@ -1,5 +1,5 @@
-//Version:1.1.0
-//Date:2024-11-13 16:10:05
+//Version:1.2.0
+//Date:2024-11-13 22:10:00
 
 addEventListener('fetch', event => {
     event.respondWith(handleRequest(event.request));
