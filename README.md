@@ -1,7 +1,12 @@
 # car-qrcode-notify
 挪车二维码
 
-在大佬的基础上增加了，部分后台管理功能（需要绑定 KV 数据库），可通过 api 添加，删除，更新、查看车辆列表，部署一次可多辆车辆一起使用，无需重复部署。通知发送、获取手机号都由服务器处理，通知渠道支持 wxpusher、bark、feishu 机器人，如需更多渠道可自行增加。可设置发送通知的速率
+在大佬的基础上增加了，部分后台管理功能（需要绑定 KV 数据库），可通过 api 添加，删除，更新、查看车辆列表，部署一次可多辆车辆一起使用，无需重复部署。通知发送、获取手机号都由服务器处理，通知渠道支持 WxPusher、Bark、飞书机器人、微信机器人、钉钉机器人、NapCatQQ、Lagrange.Onebot，如需更多渠道可自行增加。可设置发送通知的速率，可设置首页风格。
+
+【V1.3 更新内容】\
+1、新增一套首页风格，https://xxxxxx.workers.dev/?id=1&style=2 ，默认为风格1（sytle=1 风格1，style=2 风格2）\
+2、页面交互优化\
+3、修复已知问题
 
 【V1.2 更新内容】\
 1、增加多个通知渠道现在支持（WxPusher、Bark、飞书机器人、微信机器人、钉钉机器人、NapCatQQ、Lagrange.Onebot）\
@@ -43,9 +48,11 @@ notifyType为3则使用feishu，notifyToken为xxxxxx的值，不需要输入完�
 部署完后访问你自己的 workers 即可\
 1、https://xxxxxx.workers.dev/add 访问你自己的链接添加车辆\
 2、https://xxxxxx.workers.dev/manager 比链接1功能更完善\
-3、https://xxxxxx.workers.dev/?id=1 访问你自己的链接发送通知或拨打电话。需要带相应的车辆 id
+3、https://xxxxxx.workers.dev/?id=1&style=2 默认为风格1（sytle=1 风格1，style=2 风格2）访问你自己的链接发送通知或拨打电话。需要带相应的车辆 id
 
 ![1731510826119](https://github.com/user-attachments/assets/eb400783-25f4-49f2-bda7-afba87e0adbd)
+
+![1731591538885](https://github.com/user-attachments/assets/be461088-4769-45ea-b11d-bfe1f7e104c9)
 
 ![image](https://github.com/user-attachments/assets/c7070a26-83c0-4c29-993f-cc8107488151)
 
