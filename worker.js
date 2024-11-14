@@ -1,5 +1,5 @@
-//Version:1.2.0
-//Date:2024-11-14 10:10:22
+//Version:1.3.0
+//Date:2024-11-14 21:30:22
 
 addEventListener('fetch', event => {
     event.respondWith(handleRequest(event.request));
@@ -30,23 +30,17 @@ async function handleRequest(request) {
     try {
         const url = new URL(request.url);
         const pathname = url.pathname;
-
         if (request.method === "OPTIONS") {
             return getResponse("", 204);
         }
         else if (request.method == "POST") {
             if (pathname == '/api/notifyOwner') {
-                const { id } = await request.json();
-                if (await rateLimit(id)) {
-                    return await notifyOwner(id);
-                }
-                else {
-                    return getResponse(JSON.stringify({ code: 200, data: rateLimitMessage, message: "success" }), 200);
-                }
+                const json = await request.json();
+                return await notifyOwner(json);
             }
             else if (pathname == '/api/callOwner') {
-                const { id } = await request.json();
-                return await callOwner(id);
+                const json = await request.json();
+                return await callOwner(json);
             }
             else if (pathname == '/api/addOwner') {
                 if (!isAuth(request)) {
@@ -80,7 +74,8 @@ async function handleRequest(request) {
                 return addOwnerIndex();
             }
             else {
-                return index();
+                const style = url.searchParams.get("style") || "1";
+                return style == "2" ? index2() : index1();
             }
         }
     } catch (error) {
@@ -111,7 +106,12 @@ async function rateLimit(id) {
     return true
 }
 
-async function notifyOwner(id) {
+async function notifyOwner(json) {
+    const { id, messsage } = json;
+    const isCanSend=await rateLimit(id);
+    if (!isCanSend) {
+        return getResponse(JSON.stringify({ code: 200, data: rateLimitMessage, message: "success" }), 200);
+    }
     const owner = await DATA.get(`car_${id.toLowerCase()}`);
     if (!owner) {
         return getResponse(JSON.stringify({ code: 500, data: "车辆信息错误！", message: "fail" }), 200);
@@ -120,7 +120,7 @@ async function notifyOwner(id) {
     const { notifyType, notifyToken } = JSON.parse(owner);
     const provider = notifyTypeMap.find(element => element.id == notifyType);
     if (provider && provider.functionName && typeof provider.functionName === 'function') {
-        resp = await provider.functionName(notifyToken, notifyMessage);
+        resp = await provider.functionName(notifyToken, messsage || notifyMessage);
     }
     else {
         resp = { code: 500, data: "发送失败!", message: "fail" };
@@ -128,7 +128,8 @@ async function notifyOwner(id) {
     return getResponse(JSON.stringify(resp), 200);
 }
 
-async function callOwner(id) {
+async function callOwner(json) {
+    const { id } = json;
     const owner = await DATA.get(`car_${id.toLowerCase()}`);
     if (!owner) {
         return getResponse(JSON.stringify({ code: 500, data: "车辆信息错误！", message: "fail" }), 200);
@@ -172,46 +173,166 @@ function getNotifyTypeList() {
     return getResponse(JSON.stringify({ code: 200, data: types, message: "success" }), 200);
 }
 
-function index() {
-    const htmlContent = `
-    <!DOCTYPE html>
+function index1() {
+    const htmlContent = `<!DOCTYPE html>
     <html lang="zh-CN">
-      <head>
+    
+    <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport"
+            content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <title>通知车主挪车</title>
         <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5; color: #333; }
-          .container { text-align: center; padding: 20px; width: 100%; max-width: 400px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); background: #fff; }
-          h1 { font-size: 24px; margin-bottom: 20px; color: #007bff; }
-          p { margin-bottom: 20px; font-size: 16px; color: #555; }
-          button { 
-            width: 100%; 
-            padding: 15px; 
-            margin: 10px 0; 
-            font-size: 18px; 
-            font-weight: bold; 
-            color: #fff; 
-            border: none; 
-            border-radius: 6px; 
-            cursor: pointer; 
-            transition: background 0.3s; 
-          }
-          .notify-btn { background: #28a745; }
-          .notify-btn:hover { background: #218838; }
-          .call-btn { background: #17a2b8; }
-          .call-btn:hover { background: #138496; }
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+    
+            body {
+                font-family: Arial, sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                background: #f0f2f5;
+                color: #333;
+            }
+    
+            .container {
+                text-align: center;
+                padding: 20px;
+                width: 100%;
+                max-width: 400px;
+                border-radius: 8px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                background: #fff;
+                margin: 10px
+            }
+    
+            h1 {
+                font-size: 24px;
+                margin-bottom: 20px;
+                color: #007bff;
+            }
+    
+            p {
+                margin-bottom: 20px;
+                font-size: 16px;
+                color: #555;
+            }
+    
+            button {
+                width: 100%;
+                padding: 15px;
+                margin: 10px 0;
+                font-size: 18px;
+                font-weight: bold;
+                color: #fff;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: background 0.3s;
+            }
+    
+            .notify-btn {
+                background: #28a745;
+            }
+    
+            .notify-btn:hover {
+                background: #218838;
+            }
+    
+            .call-btn {
+                background: #17a2b8;
+            }
+    
+            .call-btn:hover {
+                background: #138496;
+            }
+    
+            @keyframes float {
+                0% {
+                    transform: translateY(0px) rotate(0deg);
+                }
+    
+                50% {
+                    transform: translateY(-20px) rotate(5deg);
+                }
+    
+                100% {
+                    transform: translateY(0px) rotate(0deg);
+                }
+            }
+    
+            .loading {
+                pointer-events: none;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+    
+            .loading::after {
+                content: "";
+                position: absolute;
+                width: 20px;
+                height: 20px;
+                border: 3px solid #ffffff;
+                border-radius: 50%;
+                border-top-color: transparent;
+                animation: spin 0.8s linear infinite;
+                margin-left: 10px;
+            }
+    
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+    
+            .toast {
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 50px;
+                font-size: 16px;
+                opacity: 0;
+                transition: opacity 0.3s;
+            }
+    
+            .toast.show {
+                opacity: 1;
+            }
+    
+            .modal {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+            }
         </style>
-      </head>
-      <body>
+    </head>
+    
+    <body>
         <div class="container">
-          <h1>通知车主挪车</h1>
-          <p>如需通知车主，请点击以下按钮</p>
-          <button class="notify-btn" onclick="notifyOwner()">通知车主挪车</button>
-          <button class="call-btn" onclick="callOwner()">拨打车主电话</button>
+            <h1>通知车主挪车</h1>
+            <p>如需通知车主，请点击以下按钮</p>
+            <button class="notify-btn" onclick="notifyOwner()">通知车主挪车</button>
+            <button class="call-btn" onclick="callOwner()">拨打车主电话</button>
         </div>
-  
+        <div id="toast" class="toast"></div>
+        <div id="loadingBox" class="modal">
+            <div class="loading"></div>
+        </div>
+    
         <script>
             function getQueryVariable(variable) {
                 let query = window.location.search.substring(1);
@@ -224,69 +345,457 @@ function index() {
                 }
                 return "";
             }
-  
-          // 调用 Wxpusher API 来发送挪车通知
-          function notifyOwner() {
-            let id=getQueryVariable("id");
-  
-            if(!id){
-                alert("未获取到id参数"); 
-                return;
+    
+            // 发送通知
+            function notifyOwner() {
+                let id = getQueryVariable("id");
+    
+                if (!id) {
+                    showToast("未获取到id参数");
+                    return;
+                }
+    
+                showLoading(true);
+                fetch("/api/notifyOwner", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        id: id,
+                        message: ""
+                    })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        showLoading(false);
+                        showToast(data.data);
+                    })
+                    .catch(error => {
+                        showLoading(false);
+                        console.error("Error sending notification:", error);
+                        alert("通知发送出错，请检查网络连接。");
+                    });
             }
-  
-            fetch("/api/notifyOwner", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id: id,
-              })
+    
+            // 拨打车主电话
+            function callOwner() {
+                let id = getQueryVariable("id");
+    
+                if (!id) {
+                    showToast("未获取到id参数");
+                    return;
+                }
+                showLoading(true);
+                fetch("/api/callOwner", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        id: id,
+                    })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        showLoading(false);
+                        if (data.code === 200) {
+                            window.location.href = "tel:" + data.data;
+                        } else {
+                            alert(data.data);
+                        }
+                    })
+                    .catch(error => {
+                        showLoading(false);
+                        console.error("Error sending notification:", error);
+                        alert("通知发送出错，请检查网络连接。");
+                    });
+            }
+    
+            function showToast(message, duration = 5000) {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, duration);
+            }
+    
+            // 显示添加模态框
+            function showLoading(isShow) {
+                if (isShow) {
+                    document.getElementById('loadingBox').style.display = 'block';
+                }
+                else {
+                    document.getElementById('loadingBox').style.display = 'none';
+                }
+            }
+        </script>
+    </body>
+    
+    </html>`;
+
+    return new Response(htmlContent, {
+        headers: {
+            'Content-Type': 'text/html;charset=UTF-8',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*'
+        }
+    })
+}
+
+function index2() {
+    const htmlContent = `<!DOCTYPE html>
+    <html lang="zh-CN">
+    
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <title>通知车主挪车</title>
+      <style>
+        * {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+        }
+    
+        :root {
+          --primary-color: #4776E6;
+          --secondary-color: #8E54E9;
+          --text-color: #2c3e50;
+          --shadow-color: rgba(0, 0, 0, 0.1);
+        }
+    
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+          background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+          color: var(--text-color);
+          padding: 20px;
+          line-height: 1.6;
+        }
+    
+        .container {
+          text-align: center;
+          padding: 40px 30px;
+          width: 100%;
+          max-width: 400px;
+          border-radius: 16px;
+          box-shadow: 0 10px 40px var(--shadow-color);
+          background: rgba(255, 255, 255, 0.95);
+          /* backdrop-filter: blur(10px); */
+          transform: translateY(0);
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    
+        .container:hover {
+          transform: translateY(-8px);
+          box-shadow: 0 15px 50px rgba(0, 0, 0, 0.15);
+        }
+    
+        h1 {
+          /* font-size: 32px;  */
+          margin-bottom: 25px;
+          background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          font-weight: 700;
+        }
+    
+        .car-icon {
+          font-size: 64px;
+          margin-bottom: 25px;
+          display: inline-block;
+          animation: float 6s ease-in-out infinite;
+        }
+    
+        p {
+          margin-bottom: 30px;
+          /* font-size: 18px;  */
+          color: #546e7a;
+          line-height: 1.8;
+        }
+    
+        .button-group {
+          display: flex;
+          flex-wrap: wrap;
+          /* 允许子元素换行 */
+          justify-content: space-between;
+          /* 子元素在主轴上均匀分布 */
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+    
+        button {
+          flex: 1;
+          padding: 10px;
+          /* font-size: 18px; 
+                font-weight: 600;  */
+          border-radius: 10px;
+          color: #fff;
+          border: none;
+    
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+        }
+    
+        button:active {
+          transform: scale(0.98);
+        }
+    
+        .action-btn {
+          background: linear-gradient(45deg, #546c7c, #546c7c);
+          box-shadow: 0 4px 15px rgba(71, 118, 230, 0.2);
+        }
+    
+        .action-btn:hover {
+          box-shadow: 0 6px 20px rgba(71, 118, 230, 0.3);
+          transform: translateY(-2px);
+        }
+    
+        .notify-btn {
+          background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+          box-shadow: 0 4px 15px rgba(71, 118, 230, 0.2);
+        }
+    
+        .notify-btn:hover {
+          box-shadow: 0 6px 20px rgba(71, 118, 230, 0.3);
+          transform: translateY(-2px);
+        }
+    
+        .call-btn {
+          background: linear-gradient(45deg, #00b09b, #96c93d);
+          box-shadow: 0 4px 15px rgba(0, 176, 155, 0.2);
+        }
+    
+        .call-btn:hover {
+          box-shadow: 0 6px 20px rgba(0, 176, 155, 0.3);
+          transform: translateY(-2px);
+        }
+    
+        @keyframes float {
+          0% {
+            transform: translateY(0px) rotate(0deg);
+          }
+    
+          50% {
+            transform: translateY(-20px) rotate(5deg);
+          }
+    
+          100% {
+            transform: translateY(0px) rotate(0deg);
+          }
+        }
+    
+        .loading {
+          pointer-events: none;
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+        }
+    
+        .loading::after {
+          content: "";
+          position: absolute;
+          width: 20px;
+          height: 20px;
+          border: 3px solid #ffffff;
+          border-radius: 50%;
+          border-top-color: transparent;
+          animation: spin 0.8s linear infinite;
+          margin-left: 10px;
+        }
+    
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+    
+        .toast {
+          position: fixed;
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(0, 0, 0, 0.8);
+          color: white;
+          padding: 12px 24px;
+          border-radius: 50px;
+          font-size: 16px;
+          opacity: 0;
+          transition: opacity 0.3s;
+        }
+    
+        .toast.show {
+          opacity: 1;
+        }
+    
+        textarea {
+          width: 100%;
+          padding: 10px;
+          margin-bottom: 20px;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+        }
+    
+        .modal {
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-color: rgba(0, 0, 0, 0.5);
+        }
+      </style>
+    </head>
+    
+    <body>
+      <div class="container">
+        <div class="car-icon">🚗</div>
+        <h1>温馨提示</h1>
+        <p>不好意思阻碍到您的出行了<br>请通过以下方式联系我，我会立即前来挪车</p>
+        <textarea rows="5" id="notifyMessage" placeholder="给车主留言">车主，有人需要您挪车，请及时处理一下哦。</textarea>
+        <div class="button-group">
+          <button class="action-btn" data-msg="车主，有人需要您挪车，请及时处理一下哦。">
+            <span>挪车</span>
+          </button>
+          <button class="action-btn" data-msg="车主，您爱车的车窗未关，请及时处理一下哦。">
+            <span>未关窗</span>
+          </button>
+        </div>
+        <div class="button-group">
+          <button class="action-btn" data-msg="车主，您爱车的车灯未关，请及时处理一下哦。">
+            <span>未关灯</span>
+          </button>
+          <button class="action-btn" data-msg="车主，此处有交警查车，请及时处理一下哦。">
+            <span>交警</span>
+          </button>
+        </div>
+        <div class="button-group">
+          <button class="notify-btn" onclick="notifyOwner()">
+            <span>微信通知</span> 📱
+          </button>
+          <button class="call-btn" onclick="callOwner()">
+            <span>电话联系</span> 📞
+          </button>
+        </div>
+      </div>
+      <div id="toast" class="toast"></div>
+      <div id="loadingBox" class="modal">
+        <div class="loading"></div>
+      </div>
+      <script>
+    
+        document.addEventListener('DOMContentLoaded', () => {
+          let btns = document.querySelectorAll(".action-btn");
+          btns.forEach(element => {
+            element.addEventListener("click", function (e) {
+              document.getElementById("notifyMessage").value = e.currentTarget.dataset.msg;
             })
+          });
+        });
+    
+        function showToast(message, duration = 5000) {
+          const toast = document.getElementById('toast');
+          toast.textContent = message;
+          toast.classList.add('show');
+          setTimeout(() => {
+            toast.classList.remove('show');
+          }, duration);
+        }
+    
+        // 显示关闭加载框
+        function showLoading(isShow) {
+          if (isShow) {
+            document.getElementById('loadingBox').style.display = 'block';
+          }
+          else {
+            document.getElementById('loadingBox').style.display = 'none';
+          }
+        }
+    
+        function getQueryVariable(variable) {
+          let query = window.location.search.substring(1);
+          let vars = query.split("&");
+          for (let i = 0; i < vars.length; i++) {
+            let pair = vars[i].split("=");
+            if (pair[0].toLowerCase() == variable.toLowerCase()) {
+              return pair[1];
+            }
+          }
+          return "";
+        }
+    
+        // 发送通知
+        function notifyOwner() {
+          let id = getQueryVariable("id");
+          let message = document.getElementById("notifyMessage").value || "您好，有人需要您挪车，请及时处理。"
+          if (!id) {
+            showToast("未获取到id参数");
+            return;
+          }
+          showLoading(true);
+          fetch("/api/notifyOwner", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: id,
+              message: message
+            })
+          })
             .then(response => response.json())
             .then(data => {
+              showLoading(false);
+              showToast(data.data);
+            })
+            .catch(error => {
+              showLoading(false);
+              console.error("Error sending notification:", error);
+              alert("通知发送出错，请检查网络连接。");
+            });
+        }
+    
+        // 拨打车主电话
+        function callOwner() {
+          let id = getQueryVariable("id");
+    
+          if (!id) {
+            showToast("未获取到id参数");
+            return;
+          }
+          showLoading(true);
+          fetch("/api/callOwner", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: id,
+            })
+          })
+            .then(response => response.json())
+            .then(data => {
+              showLoading(false);
               if (data.code === 200) {
-                alert(data.data);
+                window.location.href = "tel:" + data.data;
               } else {
                 alert(data.data);
               }
             })
             .catch(error => {
+              showLoading(false);
               console.error("Error sending notification:", error);
               alert("通知发送出错，请检查网络连接。");
             });
-          }
-  
-          // 拨打车主电话
-          function callOwner() {
-            let id=getQueryVariable("id");
-  
-            if(!id){
-                alert("未获取到id参数"); 
-                return;
-            }          
-            fetch("/api/callOwner", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  id: id,
-                })
-              })
-              .then(response => response.json())
-              .then(data => {
-                if (data.code === 200) {
-                  window.location.href = "tel:"+data.data;
-                } else {
-                  alert(data.data);
-                }
-              })
-              .catch(error => {
-                console.error("Error sending notification:", error);
-                alert("通知发送出错，请检查网络连接。");
-              });            
-          }
-        </script>
-      </body>
-    </html>
-  `
+        }
+      </script>
+    </body>
+    
+    </html>`;
     return new Response(htmlContent, {
         headers: {
             'Content-Type': 'text/html;charset=UTF-8',
@@ -570,6 +1079,20 @@ function managerOwnerIndex() {
             .edit-btn:hover {
                 background-color: #e0a800;
             }
+
+            .notify-btn {
+                background-color: #17a2b8;
+                color: white;
+                padding: 5px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: background-color 0.3s;
+            }
+    
+            .notify-btn:hover {
+                background-color: #138496;
+            }
     
             .modal {
                 display: none;
@@ -728,15 +1251,41 @@ function managerOwnerIndex() {
                     <td><a href="/?id=\${owner.id}" target="_blank">\${owner.id}</a></td>
                     <td>\${owner.phone}</td>
                     <td>\${owner.notifyType}</td>
-                    <td>\${owner.notifyToken}</td>
+                    <td>\${owner.notifyToken.length>50?owner.notifyToken.substring(0,50)+"...":owner.notifyToken}</td>
                     <td class="actions">
+                        <button class="notify-btn" onclick="notifyOwner('\${owner.id}')">通知</button>
                         <button class="edit-btn" onclick="showEditModal('\${owner.id}', '\${owner.phone}', '\${owner.notifyType}', '\${owner.notifyToken}')">编辑</button>
                         <button class="delete-btn" onclick="deleteOwner('\${owner.id}')">删除</button>
                     </td>\`;
                     tbody.appendChild(tr);
                 });
             }
-    
+
+            // 通知车辆
+            function notifyOwner(id) {
+                fetch("/api/notifyOwner", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            id
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.code === 200) {
+                            alert(data.data);
+                        } else {
+                            alert(data.data);
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Error sending notification:", error);
+                        alert("通知发送出错，请检查网络连接。");
+                    });
+            }
+
             // 添加车辆
             function addOwner() {
                 const id = document.getElementById('addId').value;
