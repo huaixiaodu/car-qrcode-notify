@@ -107,7 +107,7 @@ async function rateLimit(id) {
 }
 
 async function notifyOwner(json) {
-    const { id, messsage } = json;
+    const { id, message } = json;
     const isCanSend=await rateLimit(id);
     if (!isCanSend) {
         return getResponse(JSON.stringify({ code: 200, data: rateLimitMessage, message: "success" }), 200);
@@ -120,7 +120,7 @@ async function notifyOwner(json) {
     const { notifyType, notifyToken } = JSON.parse(owner);
     const provider = notifyTypeMap.find(element => element.id == notifyType);
     if (provider && provider.functionName && typeof provider.functionName === 'function') {
-        resp = await provider.functionName(notifyToken, messsage || notifyMessage);
+        resp = await provider.functionName(notifyToken, message || notifyMessage);
     }
     else {
         resp = { code: 500, data: "发送失败!", message: "fail" };
