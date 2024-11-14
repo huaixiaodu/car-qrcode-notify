@@ -1,5 +1,5 @@
 //Version:1.2.0
-//Date:2024-11-13 22:10:00
+//Date:2024-11-14 10:10:22
 
 addEventListener('fetch', event => {
     event.respondWith(handleRequest(event.request));
@@ -17,11 +17,11 @@ const rateLimitMessage = "我正在赶来的路上,请稍等片刻~~~";
 
 //通知类型，其他的通知类型可自行实现
 const notifyTypeMap = [
-    { "id": "1", "name": "WxPusher", "functionName": wxpusher, "tip": "AT_xxxxxx|UID_xxxxxx" },
-    { "id": "2", "name": "Bark", "functionName": bark, "tip": "https://api.day.app/xxxxxx，请直接输入末尾xxxxxx代表的值" },
-    { "id": "3", "name": "飞书机器人", "functionName": feishu, "tip": "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxx，请直接输入末尾xxxxxx代表的值" },
-    { "id": "4", "name": "企业微信机器人", "functionName": weixin, "tip": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxxx，请直接输入末尾xxxxxx代表的值" },
-    { "id": "5", "name": "钉钉机器人", "functionName": dingtalk, "tip": "https://oapi.dingtalk.com/robot/send?access_token=xxxxxx，请直接输入末尾xxxxxx代表的值" },
+    { "id": "1", "name": "WxPusher", "functionName": wxpusher, "tip": "\r\nAT_xxxxxx|UID_xxxxxx" },
+    { "id": "2", "name": "Bark", "functionName": bark, "tip": "\r\ntoken|soundName\r\n\r\n注：token为xxxxxx代表的值，直接输入该值即可，请勿输入完整链接（https://api.day.app/xxxxxx），soundName为铃声名称（默认使用：multiwayinvitation），如需自定义铃声需要把铃声文件先上传到BarkApp" },
+    { "id": "3", "name": "飞书机器人", "functionName": feishu, "tip": "\r\ntoken\r\n\r\n注：token为xxxxxx代表的值，直接输入该值即可，请勿输入完整链接（https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxx）" },
+    { "id": "4", "name": "企业微信机器人", "functionName": weixin, "tip": "\r\ntoken\r\n\r\n注：token为xxxxxx代表的值，直接输入该值即可，请勿输入完整链接（https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxxx）" },
+    { "id": "5", "name": "钉钉机器人", "functionName": dingtalk, "tip": "\r\ntoken\r\n\r\n注：token为xxxxxx代表的值，直接输入该值即可，请勿输入完整链接（https://oapi.dingtalk.com/robot/send?access_token=xxxxxx）" },
     { "id": "6", "name": "NapCatQQ", "functionName": onebot, "tip": "http://127.0.0.1:8000/send_private_msg|access_token|接收人QQ号" },
     { "id": "7", "name": "Lagrange.Onebot", "functionName": onebot, "tip": "http://127.0.0.1:8000/send_private_msg|access_token|接收人QQ号" }
 ]
@@ -459,8 +459,8 @@ function addOwnerIndex() {
     })
 }
 
-function managerOwnerIndex(){
-    const htmlContent=`<!DOCTYPE html>
+function managerOwnerIndex() {
+    const htmlContent = `<!DOCTYPE html>
     <html lang="zh">
     
     <head>
@@ -725,7 +725,7 @@ function managerOwnerIndex(){
                 data.forEach(owner => {
                     const tr = document.createElement('tr');
                     tr.innerHTML =\`
-                    <td>\${owner.id}</td>
+                    <td><a href="/?id=\${owner.id}" target="_blank">\${owner.id}</a></td>
                     <td>\${owner.phone}</td>
                     <td>\${owner.notifyType}</td>
                     <td>\${owner.notifyToken}</td>
@@ -936,12 +936,15 @@ async function wxpusher(token, message) {
 }
 
 async function bark(token, message) {
+    const tokens = token.split('|');
     const reqUrl = 'https://api.day.app/push';
     const jsonBody = {
         "body": message,
         "title": "挪车通知",
-        "device_key": token,
-        "group": "挪车通知"
+        "device_key": tokens[0] || "",
+        "sound": tokens[1] || "multiwayinvitation",
+        "group": "挪车通知",
+        "call": "1"
     }
 
     const response = await postRequest(reqUrl, jsonBody);
