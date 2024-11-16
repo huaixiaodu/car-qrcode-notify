@@ -1,5 +1,5 @@
-//Version:1.3.0
-//Date:2024-11-14 21:30:22
+//Version:1.4.0
+//Date:2024-11-16 19:10:20
 
 addEventListener('fetch', event => {
     event.respondWith(handleRequest(event.request));
@@ -65,13 +65,22 @@ async function handleRequest(request) {
             else if (pathname == '/api/notifyTypeList') {
                 return getNotifyTypeList();
             }
+            else if (pathname == '/api/login') {
+                const { apiKey } = await request.json();
+                if (apiKey && apiKey == API_KEY) {
+                    return getResponse(JSON.stringify({ code: 200, data: "Authorized", message: "success" }), 200);
+                }
+                else {
+                    return getResponse(JSON.stringify({ code: 401, data: "Unauthorized", message: "fail" }), 200);
+                }
+            }
         }
         else if (request.method == "GET") {
-            if (pathname == "/manager") {
-                return managerOwnerIndex();
+            if (pathname == "/login") {
+                return login();
             }
-            else if (pathname == "/add") {
-                return addOwnerIndex();
+            else if (pathname == "/manager") {
+                return managerOwnerIndex();
             }
             else {
                 const style = url.searchParams.get("style") || "1";
@@ -108,7 +117,7 @@ async function rateLimit(id) {
 
 async function notifyOwner(json) {
     const { id, message } = json;
-    const isCanSend=await rateLimit(id);
+    const isCanSend = await rateLimit(id);
     if (!isCanSend) {
         return getResponse(JSON.stringify({ code: 200, data: rateLimitMessage, message: "success" }), 200);
     }
@@ -117,10 +126,11 @@ async function notifyOwner(json) {
         return getResponse(JSON.stringify({ code: 500, data: "车辆信息错误！", message: "fail" }), 200);
     }
     let resp = null;
-    const { notifyType, notifyToken } = JSON.parse(owner);
+    const { no, notifyType, notifyToken } = JSON.parse(owner);
     const provider = notifyTypeMap.find(element => element.id == notifyType);
     if (provider && provider.functionName && typeof provider.functionName === 'function') {
-        resp = await provider.functionName(notifyToken, message || notifyMessage);
+        const sendMsg = `【${no}】${message || notifyMessage}`;
+        resp = await provider.functionName(notifyToken, sendMsg);
     }
     else {
         resp = { code: 500, data: "发送失败!", message: "fail" };
@@ -139,15 +149,15 @@ async function callOwner(json) {
 }
 
 async function addOwner(json) {
-    const { id, phone, notifyType, notifyToken } = json;
-    await DATA.put(`car_${id.toLowerCase()}`, JSON.stringify({ id: id, phone: phone, notifyType: notifyType, notifyToken: notifyToken }));
+    const { id, no, phone, notifyType, notifyToken } = json;
+    await DATA.put(`car_${id.toLowerCase()}`, JSON.stringify({ id: id, no: no, phone: phone, notifyType: notifyType, notifyToken: notifyToken }));
     return getResponse(JSON.stringify({ code: 200, data: "添加成功", message: "success" }), 200);
 }
 
 async function deleteOwner(json) {
     try {
         const { id } = json;
-        await DATA.delete(`car_${id}`);
+        await DATA.delete(`car_${id.toLowerCase()}`);
         return getResponse(JSON.stringify({ code: 200, data: "删除成功", message: "success" }), 200);
     } catch (e) {
         return getResponse(JSON.stringify({ code: 500, data: "删除失败，" + e.message, message: "success" }), 200);
@@ -159,7 +169,11 @@ async function listOwner() {
     const keys = value.keys;
     const arrys = [];
     for (let i = 0; i < keys.length; i++) {
-        arrys.push(JSON.parse(await DATA.get(keys[i].name)));
+        const owner = JSON.parse(await DATA.get(keys[i].name)) || null;
+        if (!owner || !owner.id) {
+            continue;
+        }
+        arrys.push(owner);
     }
     return getResponse(JSON.stringify({ code: 200, data: arrys, message: "success" }), 200);
 }
@@ -171,6 +185,226 @@ function getNotifyTypeList() {
     });
 
     return getResponse(JSON.stringify({ code: 200, data: types, message: "success" }), 200);
+}
+
+function login() {
+    const htmlContent = `<!DOCTYPE html>
+    <html lang="zh-CN">
+    
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport"
+            content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <title>通知车主挪车</title>
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+    
+            body {
+                font-family: Arial, sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                background: #f0f2f5;
+                color: #333;
+            }
+    
+            .container {
+                text-align: center;
+                padding: 20px;
+                width: 100%;
+                max-width: 400px;
+                border-radius: 8px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                background: #fff;
+                margin: 10px
+            }
+    
+            h1 {
+                font-size: 24px;
+                margin-bottom: 20px;
+                color: #007bff;
+            }
+ 
+            input{
+                padding: 5px;
+                width: 100%;
+            }
+    
+            button {
+                width: 100%;
+                padding: 5px;
+                margin: 10px 0;
+                font-size: 18px;
+                font-weight: bold;
+                color: #fff;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: background 0.3s;
+            }
+    
+            .call-btn {
+                background: #17a2b8;
+            }
+    
+            .call-btn:hover {
+                background: #138496;
+            }
+    
+            @keyframes float {
+                0% {
+                    transform: translateY(0px) rotate(0deg);
+                }
+    
+                50% {
+                    transform: translateY(-20px) rotate(5deg);
+                }
+    
+                100% {
+                    transform: translateY(0px) rotate(0deg);
+                }
+            }
+    
+            .loading {
+                pointer-events: none;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+    
+            .loading::after {
+                content: "";
+                position: absolute;
+                width: 20px;
+                height: 20px;
+                border: 3px solid #ffffff;
+                border-radius: 50%;
+                border-top-color: transparent;
+                animation: spin 0.8s linear infinite;
+                margin-left: 10px;
+            }
+    
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+    
+            .toast {
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 50px;
+                font-size: 16px;
+                opacity: 0;
+                transition: opacity 0.3s;
+            }
+    
+            .toast.show {
+                opacity: 1;
+            }
+    
+            .modal {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+            }
+        </style>
+    </head>
+    
+    <body>
+        <div class="container">
+        <h1>登录</h1>
+            <input type="text" id="apiKey" placeholder="请输入API_KEY"/>
+            <button class="call-btn" onclick="login()">登录</button>
+        </div>
+        <div id="toast" class="toast"></div>
+        <div id="loadingBox" class="modal">
+            <div class="loading"></div>
+        </div>
+    
+        <script>
+            function login() {
+                const authKey = document.getElementById('apiKey').value; 
+
+                if (!authKey) {
+                    showToast("请输入API_KEY");
+                    return;
+                }
+    
+                showLoading(true);
+                fetch("/api/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        apiKey: authKey 
+                    })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        showLoading(false);                        
+                        if(data.code==200){
+                            showToast("登录成功！");
+                            setTimeout(() => {
+                                localStorage.setItem('API_KEY', authKey);
+                                window.location.href="/manager";
+                            }, 500);                            
+                        }
+                        else{
+                            showToast("登录失败，API_KEY错误！");
+                        }
+                    })
+                    .catch(error => {
+                        showLoading(false);
+                        console.error("Error sending notification:", error);
+                        alert("通知发送出错，请检查网络连接。");
+                    });
+            }
+    
+            function showToast(message, duration = 5000) {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, duration);
+            }
+    
+            // 显示添加模态框
+            function showLoading(isShow) {
+                if (isShow) {
+                    document.getElementById('loadingBox').style.display = 'block';
+                }
+                else {
+                    document.getElementById('loadingBox').style.display = 'none';
+                }
+            }
+        </script>
+    </body>
+    
+    </html>`;
+
+    return new Response(htmlContent, {
+        headers: {
+            'Content-Type': 'text/html;charset=UTF-8',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*'
+        }
+    })
 }
 
 function index1() {
@@ -805,169 +1039,6 @@ function index2() {
     })
 }
 
-function addOwnerIndex() {
-    const htmlContent = `
-    <!DOCTYPE html>
-    <html lang="zh-CN">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>通知车主挪车</title>
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5; color: #333; }
-          .container { text-align: center; padding: 20px; width: 100%; max-width: 400px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); background: #fff; }
-          h1 { font-size: 24px; margin-bottom: 20px; color: #007bff; }
-          p { margin-bottom: 20px; font-size: 16px; color: #555; }
-          input[type="text"],select,textarea{ width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; }
-          button { 
-            width: 100%; 
-            padding: 15px; 
-            margin: 10px 0; 
-            font-size: 18px; 
-            font-weight: bold; 
-            color: #fff; 
-            border: none; 
-            border-radius: 6px; 
-            cursor: pointer; 
-            transition: background 0.3s; 
-          }
-          .notify-btn { background: #28a745; }
-          .notify-btn:hover { background: #218838; }
-          .call-btn { background: #17a2b8; }
-          .call-btn:hover { background: #138496; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>添加车辆信息</h1>
-          <input type="text" id="carId" placeholder="请输入车辆Id" />
-          <input type="text" id="phone" placeholder="请输入手机号" />
-          <select id="notifyType"></select>
-          <textarea rows=20 id="notifyToken" placeholder="请输入通知渠道所需的参数"></textarea>
-          <input type="text" id="authKey" placeholder="请输入API_KEY" />
-          <button class="call-btn" onclick="addOwner()">添加车辆</button>
-          <button class="call-btn" onclick="deleteOwner()">删除车辆</button>
-        </div>
-  
-        <script>
-            document.addEventListener('DOMContentLoaded', () => {
-              const notifyType = document.getElementById('notifyType');        
-              fetch("/api/notifyTypeList", {
-                  method: "POST",
-                  headers: {
-                      "Content-Type": "application/json"
-                  }
-              })
-              .then(response => response.json())
-              .then(data => {
-                  if (data.code == 200) {
-                      data.data.forEach(optionData => {
-                          const optionElement = document.createElement('option');
-                          optionElement.value = optionData.value;
-                          optionElement.textContent = optionData.text;
-                          optionElement.dataset.tip = optionData.tip; // 存储 tip 值
-                          notifyType.appendChild(optionElement);
-                      });
-  
-                      if (notifyType.options.length > 0) {
-                          notifyToken.placeholder ="请输入通知渠道所需的参数格式如下："+ notifyType.options[0].dataset.tip;
-                      }                    
-  
-                      // 添加 change 事件监听器
-                      notifyType.addEventListener('change', () => {
-                          const selectedOption = notifyType.options[notifyType.selectedIndex];
-                          notifyToken.placeholder ="请输入通知渠道所需的参数格式如下："+ selectedOption.dataset.tip;
-                      });                    
-                  }
-              })
-              .catch(error => {
-                  console.error('Error fetching options:', error);
-              });
-          });
-          
-          // 添加车辆
-          function addOwner() {        
-              const carId = document.getElementById('carId').value.trim();
-              const phone = document.getElementById('phone').value.trim();
-              const notifyType = document.getElementById('notifyType').value.trim();
-              const notifyToken = document.getElementById('notifyToken').value.trim();        
-              const authKey = document.getElementById('authKey').value.trim();        
-              if (!carId || !phone || !notifyType || !notifyToken || !authKey) {
-                  alert('参数不完整');
-                  return;
-              }        
-              fetch("/api/addOwner", {
-                  method: "POST",
-                  headers: {
-                      "Content-Type": "application/json",
-                      "Authorization": "Bearer " + authKey
-                  },
-                  body: JSON.stringify({
-                      id: carId,
-                      phone: phone,
-                      notifyType: notifyType,
-                      notifyToken: notifyToken
-                  })
-              })
-              .then(response => response.json())
-              .then(data => {
-                  if (data.code === 200) {
-                      alert(data.data);
-                  } else {
-                      alert(data.data);
-                  }
-              })
-              .catch(error => {
-                  console.error("Error sending notification:", error);
-                  alert("通知发送出错，请检查网络连接。");
-              });
-          } 
-          
-          // 删除车辆
-          function deleteOwner() {        
-              const carId = document.getElementById('carId').value.trim();   
-              const authKey = document.getElementById('authKey').value.trim();        
-              if (!carId || !authKey) {
-                  alert('车辆Id或API_KEY为空！');
-                  return;
-              }        
-              fetch("/api/deleteOwner", {
-                  method: "POST",
-                  headers: {
-                      "Content-Type": "application/json",
-                      "Authorization": "Bearer " + authKey
-                  },
-                  body: JSON.stringify({
-                      id: carId
-                  })
-              })
-              .then(response => response.json())
-              .then(data => {
-                  if (data.code === 200) {
-                      alert(data.data);
-                  } else {
-                      alert(data.data);
-                  }
-              })
-              .catch(error => {
-                  console.error("Error sending notification:", error);
-                  alert("通知发送出错，请检查网络连接。");
-              });
-          }          
-        </script>
-      </body>
-    </html>
-  `
-    return new Response(htmlContent, {
-        headers: {
-            'Content-Type': 'text/html;charset=UTF-8',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': '*'
-        }
-    })
-}
-
 function managerOwnerIndex() {
     const htmlContent = `<!DOCTYPE html>
     <html lang="zh">
@@ -1021,6 +1092,21 @@ function managerOwnerIndex() {
             .add-btn:hover {
                 background-color: #45a049;
             }
+
+            .loginOut-btn {
+                padding: 8px 16px;
+                background-color: #dc3545;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: background-color 0.3s;
+                margin-bottom: 20px;
+            }
+    
+            .loginOut-btn:hover {
+                background-color: #c82333;
+            }            
     
             .table-container {
                 background-color: #fff;
@@ -1156,14 +1242,14 @@ function managerOwnerIndex() {
                 <h1>车辆管理系统</h1>
                 <button class="add-btn" onclick="getOwnerList()">刷新列表</button>
                 <button class="add-btn" onclick="showAddModal()">添加车辆</button>
-                <button class="add-btn" onclick="saveApiKey()">保存API_KEY</button>
-                <input type="text" id="authKey" placeholder="请输入API_KEY">
+                <button class="loginOut-btn" onclick="loginOut()">注销登录</button>
             </div>
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
                             <th>车辆ID</th>
+                            <th>车牌号</th>
                             <th>手机号</th>
                             <th>通知方式</th>
                             <th>通知Token</th>
@@ -1185,6 +1271,10 @@ function managerOwnerIndex() {
                         <input type="text" id="addId" placeholder="车辆ID，可为任意内容唯一即可">
                     </div>
                     <div class="input-group">
+                    <label for="addId">车牌号</label>
+                    <input type="text" id="addNo" placeholder="车牌号">
+                </div>
+                    <div class="input-group">
                         <label for="addPhone">手机号</label>
                         <input type="text" id="addPhone" placeholder="手机号">
                     </div>
@@ -1202,14 +1292,14 @@ function managerOwnerIndex() {
         </div>
     
         <script>
-            function saveApiKey() {
-                const authKey = document.getElementById('authKey').value;
-                if (!authKey) {
-                    alert("请输入API_KEY");
+            function loginOut() {
+                if (!confirm('确认退出登录吗？')) {
                     return;
-                }
-                localStorage.setItem('API_KEY', authKey);
-                alert("API_KEY已保存，请刷新页面！")
+                } 
+                localStorage.clear();
+                setTimeout(()=>{
+                    window.location.href="/login"
+                },1000)
             }
     
             // 获取车辆列表
@@ -1249,12 +1339,13 @@ function managerOwnerIndex() {
                     const tr = document.createElement('tr');
                     tr.innerHTML =\`
                     <td><a href="/?id=\${owner.id}" target="_blank">\${owner.id}</a></td>
+                    <td>\${owner.no}</td>
                     <td>\${owner.phone}</td>
                     <td>\${owner.notifyType}</td>
                     <td>\${owner.notifyToken.length>50?owner.notifyToken.substring(0,50)+"...":owner.notifyToken}</td>
                     <td class="actions">
                         <button class="notify-btn" onclick="notifyOwner('\${owner.id}')">通知</button>
-                        <button class="edit-btn" onclick="showEditModal('\${owner.id}', '\${owner.phone}', '\${owner.notifyType}', '\${owner.notifyToken}')">编辑</button>
+                        <button class="edit-btn" onclick="showEditModal('\${owner.id}', '\${owner.no}', '\${owner.phone}', '\${owner.notifyType}', '\${owner.notifyToken}')">编辑</button>
                         <button class="delete-btn" onclick="deleteOwner('\${owner.id}')">删除</button>
                     </td>\`;
                     tbody.appendChild(tr);
@@ -1289,6 +1380,7 @@ function managerOwnerIndex() {
             // 添加车辆
             function addOwner() {
                 const id = document.getElementById('addId').value;
+                const no = document.getElementById('addNo').value;
                 const phone = document.getElementById('addPhone').value;
                 const notifyType = document.getElementById('addNotifyType').value;
                 const notifyToken = document.getElementById('addNotifyToken').value;
@@ -1311,6 +1403,7 @@ function managerOwnerIndex() {
                         },
                         body: JSON.stringify({
                             id,
+                            no,
                             phone,
                             notifyType,
                             notifyToken
@@ -1407,8 +1500,9 @@ function managerOwnerIndex() {
             }
     
             // 显示编辑模态框
-            function showEditModal(id, phone, notifyType, notifyToken) {
+            function showEditModal(id, no, phone, notifyType, notifyToken) {
                 document.getElementById('addId').value = id;
+                document.getElementById('addNo').value = no;
                 document.getElementById('addPhone').value = phone;
                 document.getElementById('addNotifyType').value = notifyType;
                 document.getElementById('addNotifyToken').value = notifyToken;
@@ -1429,6 +1523,7 @@ function managerOwnerIndex() {
             // 清空添加表单
             function clearAddForm() {
                 document.getElementById('addId').value = '';
+                document.getElementById('addNo').value = '';
                 document.getElementById('addPhone').value = '';
                 //document.getElementById('addNotifyType').value = '';
                 document.getElementById('addNotifyToken').value = '';
@@ -1440,6 +1535,12 @@ function managerOwnerIndex() {
             // }
     
             document.addEventListener('DOMContentLoaded', () => {
+                const apiKey = localStorage.getItem('API_KEY')||"";
+                if(!apiKey){
+                    window.location.href="/login";
+                    return;
+                }
+
                 getOwnerList();
                 notifyTypeList();
             });
@@ -1592,13 +1693,14 @@ async function onebot(token, message) {
     }
 }
 
-function getResponse(resp, status) {
+function getResponse(resp, status = 200, headers = {}) {
     return new Response(resp, {
         status: status,
         headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': '*'
+            'Access-Control-Allow-Headers': '*',
+            ...headers
         }
     });
 }
@@ -1607,8 +1709,8 @@ async function postRequest(reqUrl, jsonBody, headers) {
     const response = await fetch(reqUrl, {
         method: 'POST',
         headers: {
-            ...headers,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...headers
         },
         body: JSON.stringify(jsonBody)
     });
