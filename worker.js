@@ -1,12 +1,12 @@
-//Version:1.4.0
-//Date:2024-11-16 19:10:20
+//Version:1.5.0
+//Date:2024-11-22 10:50:47
 
 addEventListener('fetch', event => {
     event.respondWith(handleRequest(event.request));
 });
 
 //防止被滥用，在添加车辆信息时需要用来鉴权
-const API_KEY = "sk-1234567890";
+const API_KEY = "sk-@Admin123";
 const notifyMessage = "您好，有人需要您挪车，请及时处理。";
 const sendSuccessMessage = "您好，我已收到你的挪车通知，我正在赶来的路上，请稍等片刻！";
 //300秒内可发送5次通知
@@ -84,7 +84,8 @@ async function handleRequest(request) {
             }
             else {
                 const style = url.searchParams.get("style") || "1";
-                return style == "2" ? index2() : index1();
+                const id = url.searchParams.get("id") || "";
+                return style == "2" ? await index2(id) : await index1(id);
             }
         }
     } catch (error) {
@@ -102,14 +103,51 @@ function isAuth(request) {
     }
 }
 
+async function getKV(id) {
+    try {
+        if (id) {
+            const owner = await DATA.get(id) || null;
+            if (owner) {
+                return JSON.parse(owner);
+            }
+        }
+    } catch (e) {
+    }
+    return null;
+}
+
+async function putKV(id, owner, cfg) {
+    if (id) {
+        await DATA.put(id, JSON.stringify(owner), cfg);
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
+async function delKV(id) {
+    if (id) {
+        await DATA.delete(id);
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
+async function listKV(prefix, limit) {
+    return await DATA.list({ prefix, limit });
+}
+
 async function rateLimit(id) {
     const key = `ratelimit:${id.toLowerCase()}`;
-    const currentCount = await DATA.get(key) || 0;
+    const currentCount = await getKV(key) || 0;
     const notifyCount = parseInt(currentCount);
     if (notifyCount >= rateLimitMaxRequests) {
         return false;
     }
-    await DATA.put(key, notifyCount + 1, {
+    await putKV(key, notifyCount + 1, {
         expirationTtl: rateLimitDelay
     });
     return true
@@ -121,12 +159,15 @@ async function notifyOwner(json) {
     if (!isCanSend) {
         return getResponse(JSON.stringify({ code: 200, data: rateLimitMessage, message: "success" }), 200);
     }
-    const owner = await DATA.get(`car_${id.toLowerCase()}`);
+    const owner = await getKV(`car_${id.toLowerCase()}`);
     if (!owner) {
         return getResponse(JSON.stringify({ code: 500, data: "车辆信息错误！", message: "fail" }), 200);
     }
+    if(!owner.isNotify){
+        return getResponse(JSON.stringify({ code: 500, data: "车主未开启该功能,请使用其他方式联系车主!", message: "fail" }), 200); 
+    }
     let resp = null;
-    const { no, notifyType, notifyToken } = JSON.parse(owner);
+    const { no, notifyType, notifyToken } = owner;
     const provider = notifyTypeMap.find(element => element.id == notifyType);
     if (provider && provider.functionName && typeof provider.functionName === 'function') {
         const sendMsg = `【${no}】${message || notifyMessage}`;
@@ -140,24 +181,31 @@ async function notifyOwner(json) {
 
 async function callOwner(json) {
     const { id } = json;
-    const owner = await DATA.get(`car_${id.toLowerCase()}`);
+    const owner = await getKV(`car_${id.toLowerCase()}`);
     if (!owner) {
         return getResponse(JSON.stringify({ code: 500, data: "车辆信息错误！", message: "fail" }), 200);
     }
-    const { phone } = JSON.parse(owner);
+    if(!owner.isCall){
+        return getResponse(JSON.stringify({ code: 500, data: "车主未开启该功能,请使用其他方式联系车主!", message: "fail" }), 200); 
+    }
+    const { phone } = owner;
     return getResponse(JSON.stringify({ code: 200, data: phone, message: "success" }), 200);
 }
 
 async function addOwner(json) {
-    const { id, no, phone, notifyType, notifyToken } = json;
-    await DATA.put(`car_${id.toLowerCase()}`, JSON.stringify({ id: id, no: no, phone: phone, notifyType: notifyType, notifyToken: notifyToken }));
-    return getResponse(JSON.stringify({ code: 200, data: "添加成功", message: "success" }), 200);
+    try {
+        const { id, no, phone, notifyType, notifyToken, isNotify, isCall } = json;
+        await putKV(`car_${id.toLowerCase()}`, { id, no, phone, notifyType, notifyToken, isNotify, isCall });
+        return getResponse(JSON.stringify({ code: 200, data: "添加成功", message: "success" }), 200);
+    } catch (e) {
+        return getResponse(JSON.stringify({ code: 500, data: "添加失败，" + e.message, message: "success" }), 200);
+    }
 }
 
 async function deleteOwner(json) {
     try {
         const { id } = json;
-        await DATA.delete(`car_${id.toLowerCase()}`);
+        await delKV(`car_${id.toLowerCase()}`);
         return getResponse(JSON.stringify({ code: 200, data: "删除成功", message: "success" }), 200);
     } catch (e) {
         return getResponse(JSON.stringify({ code: 500, data: "删除失败，" + e.message, message: "success" }), 200);
@@ -165,12 +213,12 @@ async function deleteOwner(json) {
 }
 
 async function listOwner() {
-    const value = await DATA.list({ limit: 50, prefix: "car_" });
+    const value = await listKV("car_", 50);
     const keys = value.keys;
     const arrys = [];
     for (let i = 0; i < keys.length; i++) {
-        const owner = JSON.parse(await DATA.get(keys[i].name)) || null;
-        if (!owner || !owner.id) {
+        const owner = await getKV(keys[i].name);
+        if (!owner || !owner?.id) {
             continue;
         }
         arrys.push(owner);
@@ -407,7 +455,11 @@ function login() {
     })
 }
 
-function index1() {
+async function index1(id) {
+    const owner = await getKV(`car_${id.toLowerCase()}`);
+    const isNotify = owner?.isNotify ?? true;
+    const isCall = owner?.isCall ?? true;
+
     const htmlContent = `<!DOCTYPE html>
     <html lang="zh-CN">
     
@@ -485,20 +537,6 @@ function index1() {
                 background: #138496;
             }
     
-            @keyframes float {
-                0% {
-                    transform: translateY(0px) rotate(0deg);
-                }
-    
-                50% {
-                    transform: translateY(-20px) rotate(5deg);
-                }
-    
-                100% {
-                    transform: translateY(0px) rotate(0deg);
-                }
-            }
-    
             .loading {
                 pointer-events: none;
                 position: absolute;
@@ -516,13 +554,11 @@ function index1() {
                 border-radius: 50%;
                 border-top-color: transparent;
                 animation: spin 0.8s linear infinite;
-                margin-left: 10px;
             }
     
             @keyframes spin {
-                to {
-                    transform: rotate(360deg);
-                }
+                0% { transform: translate(-50%, -50%) rotate(0deg); }
+                100% { transform: translate(-50%, -50%) rotate(360deg); }
             }
     
             .toast {
@@ -552,6 +588,14 @@ function index1() {
                 height: 100%;
                 background-color: rgba(0, 0, 0, 0.5);
             }
+
+            .hide-notify{
+                ${!isNotify ? `display: none;` : ""}
+            }
+    
+            .hide-call{
+                ${!isCall ? `display: none;` : ""}
+            }
         </style>
     </head>
     
@@ -559,8 +603,8 @@ function index1() {
         <div class="container">
             <h1>通知车主挪车</h1>
             <p>如需通知车主，请点击以下按钮</p>
-            <button class="notify-btn" onclick="notifyOwner()">通知车主挪车</button>
-            <button class="call-btn" onclick="callOwner()">拨打车主电话</button>
+            <button class="notify-btn hide-notify" onclick="notifyOwner()">通知车主挪车</button>                    
+            <button class="call-btn hide-call" onclick="callOwner()">拨打车主电话</button>
         </div>
         <div id="toast" class="toast"></div>
         <div id="loadingBox" class="modal">
@@ -674,7 +718,11 @@ function index1() {
     })
 }
 
-function index2() {
+async function index2(id) {
+    const owner = await getKV(`car_${id.toLowerCase()}`);
+    const isNotify = owner?.isNotify ?? true;
+    const isCall = owner?.isCall ?? true;
+
     const htmlContent = `<!DOCTYPE html>
     <html lang="zh-CN">
     
@@ -842,13 +890,11 @@ function index2() {
           border-radius: 50%;
           border-top-color: transparent;
           animation: spin 0.8s linear infinite;
-          margin-left: 10px;
         }
     
         @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
         }
     
         .toast {
@@ -886,6 +932,14 @@ function index2() {
           height: 100%;
           background-color: rgba(0, 0, 0, 0.5);
         }
+
+        .hide-notify{
+            ${!isNotify ? `display: none;` : ""}
+        }
+
+        .hide-call{
+            ${!isCall ? `display: none;` : ""}
+        }
       </style>
     </head>
     
@@ -894,8 +948,10 @@ function index2() {
         <div class="car-icon">🚗</div>
         <h1>温馨提示</h1>
         <p>不好意思阻碍到您的出行了<br>请通过以下方式联系我，我会立即前来挪车</p>
-        <textarea rows="5" id="notifyMessage" placeholder="给车主留言">车主，有人需要您挪车，请及时处理一下哦。</textarea>
-        <div class="button-group">
+        <div class="button-group hide-notify">
+            <textarea rows="5" id="notifyMessage" placeholder="给车主留言">车主，有人需要您挪车，请及时处理一下哦。</textarea>
+        </div>        
+        <div class="button-group hide-notify">
           <button class="action-btn" data-msg="车主，有人需要您挪车，请及时处理一下哦。">
             <span>挪车</span>
           </button>
@@ -903,7 +959,7 @@ function index2() {
             <span>未关窗</span>
           </button>
         </div>
-        <div class="button-group">
+        <div class="button-group hide-notify">
           <button class="action-btn" data-msg="车主，您爱车的车灯未关，请及时处理一下哦。">
             <span>未关灯</span>
           </button>
@@ -912,10 +968,10 @@ function index2() {
           </button>
         </div>
         <div class="button-group">
-          <button class="notify-btn" onclick="notifyOwner()">
+          <button class="notify-btn hide-notify" onclick="notifyOwner()">
             <span>微信通知</span> 📱
           </button>
-          <button class="call-btn" onclick="callOwner()">
+          <button class="call-btn hide-call" onclick="callOwner()">
             <span>电话联系</span> 📞
           </button>
         </div>
@@ -1188,6 +1244,7 @@ function managerOwnerIndex() {
                 width: 100%;
                 height: 100%;
                 background-color: rgba(0, 0, 0, 0.5);
+                overflow-y: scroll;
             }
     
             .modal-content {
@@ -1202,6 +1259,30 @@ function managerOwnerIndex() {
                 left: 50%;
                 transform: translate(-50%, -50%);
             }
+    
+            .loading {
+                pointer-events: none;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+              }
+          
+              .loading::after {
+                content: "";
+                position: absolute;
+                width: 20px;
+                height: 20px;
+                border: 3px solid #ffffff;
+                border-radius: 50%;
+                border-top-color: transparent;
+                animation: spin 0.8s linear infinite;
+              }
+          
+              @keyframes spin {
+                  0% { transform: translate(-50%, -50%) rotate(0deg); }
+                  100% { transform: translate(-50%, -50%) rotate(360deg); }
+              }            
     
             .close {
                 float: right;
@@ -1233,6 +1314,7 @@ function managerOwnerIndex() {
             label {
                 margin-bottom: 5px;
             }
+            
         </style>
     </head>
     
@@ -1253,6 +1335,8 @@ function managerOwnerIndex() {
                             <th>手机号</th>
                             <th>通知方式</th>
                             <th>通知Token</th>
+                            <th>消息通知</th>
+                            <th>电话通知</th>
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -1271,9 +1355,9 @@ function managerOwnerIndex() {
                         <input type="text" id="addId" placeholder="车辆ID，可为任意内容唯一即可">
                     </div>
                     <div class="input-group">
-                    <label for="addId">车牌号</label>
-                    <input type="text" id="addNo" placeholder="车牌号">
-                </div>
+                        <label for="addId">车牌号</label>
+                        <input type="text" id="addNo" placeholder="车牌号">
+                    </div>
                     <div class="input-group">
                         <label for="addPhone">手机号</label>
                         <input type="text" id="addPhone" placeholder="手机号">
@@ -1284,12 +1368,22 @@ function managerOwnerIndex() {
                     </div>
                     <div class="input-group">
                         <label for="addNotifyToken">通知Token</label>
-                        <textarea rows="20" id="addNotifyToken" placeholder="通知Token"></textarea>
-                    </div>
+                        <textarea rows="10" id="addNotifyToken" placeholder="通知Token"></textarea>
+                    </div>                   
+                    <div>
+                        <input type="checkbox" id="addIsNotify" />
+                        <label for="addIsNotify">开启消息通知</label>
+
+                        <input type="checkbox" id="addIsCall" />
+                        <label for="addIsCall">开启电话通知</label>
+                    </div>   
                     <button type="submit" class="add-btn">确定</button>
                 </form>
             </div>
         </div>
+        <div id="loadingBox" class="modal">
+            <div class="loading"></div>
+        </div>        
     
         <script>
             function loginOut() {
@@ -1301,6 +1395,16 @@ function managerOwnerIndex() {
                     window.location.href="/login"
                 },1000)
             }
+
+            // 显示关闭加载框
+            function showLoading(isShow) {
+              if (isShow) {
+                document.getElementById('loadingBox').style.display = 'block';
+              }
+              else {
+                document.getElementById('loadingBox').style.display = 'none';
+              }
+            }            
     
             // 获取车辆列表
             function getOwnerList() {
@@ -1309,6 +1413,8 @@ function managerOwnerIndex() {
                     alert("请输入API_KEY");
                     return;
                 }
+
+                showLoading(true);
     
                 fetch("/api/listOwner", {
                         method: 'POST',
@@ -1319,6 +1425,7 @@ function managerOwnerIndex() {
                     })
                     .then(response => response.json())
                     .then(data => {
+                        showLoading(false);
                         if (data.code === 200) {
                             displayOwnerList(data.data);
                         } else {
@@ -1326,6 +1433,7 @@ function managerOwnerIndex() {
                         }
                     })
                     .catch(error => {
+                        showLoading(false);
                         console.error("Error sending notification:", error);
                         alert("通知发送出错，请检查网络连接。");
                     });
@@ -1342,10 +1450,12 @@ function managerOwnerIndex() {
                     <td>\${owner.no}</td>
                     <td>\${owner.phone}</td>
                     <td>\${owner.notifyType}</td>
-                    <td>\${owner.notifyToken.length>50?owner.notifyToken.substring(0,50)+"...":owner.notifyToken}</td>
+                    <td>\${owner.notifyToken.length>30?owner.notifyToken.substring(0,30)+"...":owner.notifyToken}</td>
+                    <td>\${owner.isNotify?"已开启":"未开启"}</td>
+                    <td>\${owner.isCall?"已开启":"未开启"}</td>
                     <td class="actions">
                         <button class="notify-btn" onclick="notifyOwner('\${owner.id}')">通知</button>
-                        <button class="edit-btn" onclick="showEditModal('\${owner.id}', '\${owner.no}', '\${owner.phone}', '\${owner.notifyType}', '\${owner.notifyToken}')">编辑</button>
+                        <button class="edit-btn" onclick="showEditModal('\${owner.id}', '\${owner.no}', '\${owner.phone}', '\${owner.notifyType}', '\${owner.notifyToken}', \${owner.isNotify}, \${owner.isCall})">编辑</button>
                         <button class="delete-btn" onclick="deleteOwner('\${owner.id}')">删除</button>
                     </td>\`;
                     tbody.appendChild(tr);
@@ -1354,6 +1464,7 @@ function managerOwnerIndex() {
 
             // 通知车辆
             function notifyOwner(id) {
+                showLoading(true);
                 fetch("/api/notifyOwner", {
                         method: 'POST',
                         headers: {
@@ -1365,6 +1476,7 @@ function managerOwnerIndex() {
                     })
                     .then(response => response.json())
                     .then(data => {
+                        showLoading(false);
                         if (data.code === 200) {
                             alert(data.data);
                         } else {
@@ -1372,6 +1484,7 @@ function managerOwnerIndex() {
                         }
                     })
                     .catch(error => {
+                        showLoading(false);
                         console.error("Error sending notification:", error);
                         alert("通知发送出错，请检查网络连接。");
                     });
@@ -1384,8 +1497,15 @@ function managerOwnerIndex() {
                 const phone = document.getElementById('addPhone').value;
                 const notifyType = document.getElementById('addNotifyType').value;
                 const notifyToken = document.getElementById('addNotifyToken').value;
+                const isNotify = document.getElementById('addIsNotify').checked;
+                const isCall = document.getElementById('addIsCall').checked;
                 if (!id || !phone || !notifyType || !notifyToken) {
                     alert('请填写所有字段');
+                    return;
+                }
+
+                if (!isNotify && !isCall ) {
+                    alert('请选择通知方式');
                     return;
                 }
     
@@ -1394,6 +1514,8 @@ function managerOwnerIndex() {
                     alert("请输入API_KEY");
                     return;
                 }
+
+                showLoading(true);
     
                 fetch("/api/addOwner", {
                         method: 'POST',
@@ -1406,11 +1528,14 @@ function managerOwnerIndex() {
                             no,
                             phone,
                             notifyType,
-                            notifyToken
+                            notifyToken,
+                            isNotify,
+                            isCall
                         })
                     })
                     .then(response => response.json())
                     .then(data => {
+                        showLoading(false);
                         if (data.code === 200) {
                             alert(data.data);
                             closeAddModal();
@@ -1420,6 +1545,7 @@ function managerOwnerIndex() {
                         }
                     })
                     .catch(error => {
+                        showLoading(false);
                         console.error("Error sending notification:", error);
                         alert("通知发送出错，请检查网络连接。");
                     });
@@ -1438,6 +1564,7 @@ function managerOwnerIndex() {
                     return;
                 }
     
+                showLoading(true);
                 fetch("/api/deleteOwner", {
                         method: 'POST',
                         headers: {
@@ -1450,6 +1577,7 @@ function managerOwnerIndex() {
                     })
                     .then(response => response.json())
                     .then(data => {
+                        showLoading(false);
                         if (data.code === 200) {
                             alert(data.data);
                             getOwnerList();
@@ -1458,6 +1586,7 @@ function managerOwnerIndex() {
                         }
                     })
                     .catch(error => {
+                        showLoading(false);
                         console.error("Error sending notification:", error);
                         alert("通知发送出错，请检查网络连接。");
                     });
@@ -1500,12 +1629,14 @@ function managerOwnerIndex() {
             }
     
             // 显示编辑模态框
-            function showEditModal(id, no, phone, notifyType, notifyToken) {
+            function showEditModal(id, no, phone, notifyType, notifyToken, isNotify, isCall) {
                 document.getElementById('addId').value = id;
                 document.getElementById('addNo').value = no;
                 document.getElementById('addPhone').value = phone;
                 document.getElementById('addNotifyType').value = notifyType;
                 document.getElementById('addNotifyToken').value = notifyToken;
+                document.getElementById('addIsNotify').checked = isNotify;
+                document.getElementById('addIsCall').checked = isCall;
                 document.getElementById('addModal').style.display = 'block';
             }
     
@@ -1527,6 +1658,8 @@ function managerOwnerIndex() {
                 document.getElementById('addPhone').value = '';
                 //document.getElementById('addNotifyType').value = '';
                 document.getElementById('addNotifyToken').value = '';
+                document.getElementById('addIsNotify').checked = false;
+                document.getElementById('addIsCall').checked = false;
             }
     
             // 页面加载时获取车辆列表
